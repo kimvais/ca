@@ -78,10 +78,9 @@ def convert_timestamp(now):
     return now.strftime(TS_FMT).encode('ascii')
 
 
-def create_self_signed_cert(pk, dn):
-    csr = create_cert_req(pk, dn)
+def create_certificate_from_csr(csr, issuer):
     x = OpenSSL.crypto.X509()
-    x.set_issuer(csr.get_subject())
+    x.set_issuer(issuer.get_subject())
     x.set_subject(csr.get_subject())
     x.set_pubkey(csr.get_pubkey())
     x.set_serial_number(1)
@@ -90,6 +89,12 @@ def create_self_signed_cert(pk, dn):
     not_after = convert_timestamp(now + datetime.timedelta(days=365 * 5))
     x.set_notBefore(not_before)
     x.set_notAfter(not_after)
+    return x
+
+
+def create_self_signed_cert(pk, dn):
+    csr = create_cert_req(pk, dn)
+    x = create_certificate_from_csr(csr, csr)
     x.sign(pk, 'SHA256')
     return x
 

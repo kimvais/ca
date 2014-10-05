@@ -26,12 +26,22 @@ import unittest
 import subprocess
 
 import OpenSSL
-from OpenSSL.crypto import FILETYPE_PEM
+from OpenSSL.crypto import FILETYPE_PEM, TYPE_RSA
 
 
 logger = logging.getLogger(__name__)
 
-from ca import parse_dn_components, create_self_signed_cert
+from ca import parse_dn_components, create_self_signed_cert, create_cert_req, create_certificate_from_csr
+
+
+def _read_certificate_text(cert_obj):
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(OpenSSL.crypto.dump_certificate(FILETYPE_PEM, cert_obj))
+        output = subprocess.check_output(['openssl', 'x509', '-noout', '-text', '-in', f.name]).decode('ascii')
+    finally:
+        os.unlink(f.name)
+    return output
 
 
 class TestDNParsing(unittest.TestCase):
@@ -50,7 +60,7 @@ class TestDNParsing(unittest.TestCase):
 
 
 class TestSelfSignedRootCA(unittest.TestCase):
-    def test_root(self):
+    def test_0001_root(self):
         dn = dict(CN='Kimmo Parviainen-Jalanko', L="Espoo", C='fi', emailAddress='k@77.fi', UID='kimvais')
         pk_text = """-----BEGIN RSA PRIVATE KEY-----
 MIIEogIBAAKCAQEArKC07XzM1xYDCA+tRqTpysfoTeb95xUO6Xy/08bPXf3YN8YH
@@ -79,27 +89,23 @@ hSPdAoGAc6DsmHDELbhBbDeeSPeyWJ0KGJ3eGfVGvqWG/L3oz9k7S+QUnWrT/OU9
 DDBEj7Z+9fcUD0nITBf5IKCaNI0Eu7IoWjzkCi1X2Hhju68HTHkg0Z75x6kx5uu/
 VlkMGsPXn/qIz2CFLLil84YL848MurxzTLmq4eBMWSdyjWJTXuk=
 -----END RSA PRIVATE KEY-----"""
-        certificate = create_self_signed_cert(OpenSSL.crypto.load_privatekey(FILETYPE_PEM, pk_text), dn)
-        cert_pem = OpenSSL.crypto.dump_certificate(FILETYPE_PEM, certificate)
-        with tempfile.NamedTemporaryFile(delete=False) as f:
-            # with open("test.crt", 'w+b') as f:
-            f.write(cert_pem)
-            self.files.append(f.name)
-        logger.fatal(f.name)
-        output = subprocess.check_output(['openssl', 'x509', '-noout', '-text', '-in', f.name]).decode('ascii')
-        self.assertRegex(output, r'Subject: CN=Kimmo Parviainen-Jalanko, L=Espoo, C=fi/emailAddress=k@77.fi/UID=kimvais')
+        self.__class__.privatekey = OpenSSL.crypto.load_privatekey(FILETYPE_PEM, pk_text)
+        self.__class__.root_ca = create_self_signed_cert(self.privatekey, dn)
+        cert_obj = self.root_ca
+        output = _read_certificate_text(cert_obj)
+        self.assertRegex(output,
+                         r'Subject: CN=Kimmo Parviainen-Jalanko, L=Espoo, C=fi/emailAddress=k@77.fi/UID=kimvais')
         self.assertRegex(output, r'Issuer: CN=Kimmo Parviainen-Jalanko, L=Espoo, C=fi/emailAddress=k@77.fi/UID=kimvais')
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.files = list()
-
-    @classmethod
-    def tearDownClass(cls):
-        super().tearDownClass()
-        for f in cls.files:
-            os.unlink(f)
-
+    def test_0002_issued_cert(self):
+        pk1 = OpenSSL.crypto.PKey()
+        pk1.generate_key(TYPE_RSA, 1024)
+        csr = create_cert_req(pk1, dict(CN='foobar', C='FI'))
+        crt = create_certificate_from_csr(csr, self.root_ca)
+        crt.sign(self.privatekey, 'SHA256')
+        output = _read_certificate_text(crt)
+        self.assertRegex(output,
+                         r'Subject: CN=foobar, C=FI')
+        self.assertRegex(output, r'Issuer: CN=Kimmo Parviainen-Jalanko, L=Espoo, C=fi/emailAddress=k@77.fi/UID=kimvais')
 
 
