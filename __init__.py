@@ -62,15 +62,13 @@ def set_name_from_dict(x509_name, name_d):
         setattr(x509_name, k, v)
 
 
-def create_cert_req(pk):
+def create_cert_req(pk, dn):
     c = OpenSSL.crypto.X509Req()
     c.set_pubkey(pk)
-    dn = dict(CN='Kimmo Parviainen-Jalanko', L="Espoo", C='fi', emailAddress='k@77.fi', UID='kimvais')
     set_name_from_dict(c.get_subject(), dn)
     c.get_subject()
     c.sign(pk, 'SHA256')
     c.verify(pk)
-    c.get_version()
     # csr = OpenSSL.crypto.dump_certificate_request(FILETYPE_PEM, c)
     return c
 
@@ -80,8 +78,8 @@ def convert_timestamp(now):
     return now.strftime(TS_FMT).encode('ascii')
 
 
-def create_self_signed_cert(pk):
-    csr = create_cert_req(pk)
+def create_self_signed_cert(pk, dn):
+    csr = create_cert_req(pk, dn)
     x = OpenSSL.crypto.X509()
     x.set_issuer(csr.get_subject())
     x.set_subject(csr.get_subject())
@@ -96,10 +94,4 @@ def create_self_signed_cert(pk):
     return x
 
 
-if __name__ == '__main__':
-    with open('/Users/kimvais/.ssh/id_rsa') as f:
-        certificate = create_self_signed_cert(OpenSSL.crypto.load_privatekey(FILETYPE_PEM, f.read()))
-    cert_pem = OpenSSL.crypto.dump_certificate(FILETYPE_PEM, certificate).decode('ascii')
-    with open('testca.crt', 'w') as f:
-        f.write(cert_pem)
-    assert subprocess.check_call(['openssl', 'x509', '-noout', '-in', 'testca.crt']) == 0
+
