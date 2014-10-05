@@ -20,10 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 import datetime
-import subprocess
 
-import OpenSSL
-from OpenSSL.crypto import FILETYPE_PEM
+from OpenSSL.crypto import X509Extension, X509, X509Req
 
 
 def parse_dn_components(d):
@@ -63,7 +61,7 @@ def set_name_from_dict(x509_name, name_d):
 
 
 def create_cert_req(pk, dn):
-    c = OpenSSL.crypto.X509Req()
+    c = X509Req()
     c.set_pubkey(pk)
     set_name_from_dict(c.get_subject(), dn)
     c.get_subject()
@@ -79,7 +77,7 @@ def convert_timestamp(now):
 
 
 def create_certificate_from_csr(csr, issuer):
-    x = OpenSSL.crypto.X509()
+    x = X509()
     x.set_issuer(issuer.get_subject())
     x.set_subject(csr.get_subject())
     x.set_pubkey(csr.get_pubkey())
@@ -92,11 +90,24 @@ def create_certificate_from_csr(csr, issuer):
     return x
 
 
-def create_self_signed_cert(pk, dn):
+def create_self_signed_root_cert(pk, dn):
     csr = create_cert_req(pk, dn)
     x = create_certificate_from_csr(csr, csr)
+    ext = list()
+    ext.append(X509Extension(b'basicConstraints', critical=True, value=b'CA:TRUE'))
+    ext.append(X509Extension(b'subjectKeyIdentifier', critical=False, value=b'hash', subject=x))
+    x.add_extensions(ext)
+    # XXX: Thanks to https://github.com/Eichhoernchen/SiriServerCore for struggling with this before
+    x.add_extensions((X509Extension(b'authorityKeyIdentifier', critical=False, value=b'keyid:always', issuer=x),))
     x.sign(pk, 'SHA256')
     return x
 
+
+def add_default_extensions(cert, issuer):
+    ext = list()
+    ext.append(X509Extension(b'basicConstraints', critical=True, value=b'CA:FALSE'))
+    ext.append(X509Extension(b'subjectKeyIdentifier', critical=False, value=b'hash', subject=cert))
+    ext.append(X509Extension(b'authorityKeyIdentifier', critical=False, value=b'keyid:always', issuer=issuer, subject=issuer))
+    cert.add_extensions(ext)
 
 

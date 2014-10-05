@@ -31,7 +31,7 @@ from OpenSSL.crypto import FILETYPE_PEM, TYPE_RSA
 
 logger = logging.getLogger(__name__)
 
-from ca import parse_dn_components, create_self_signed_cert, create_cert_req, create_certificate_from_csr
+import ca
 
 
 def _read_certificate_text(cert_obj):
@@ -41,6 +41,7 @@ def _read_certificate_text(cert_obj):
         output = subprocess.check_output(['openssl', 'x509', '-noout', '-text', '-in', f.name]).decode('ascii')
     finally:
         os.unlink(f.name)
+    logger.info(output)
     return output
 
 
@@ -56,7 +57,7 @@ class TestDNParsing(unittest.TestCase):
             C='fi',
             CN="Example"
         )
-        self.assertEqual(parse_dn_components(d1), parse_dn_components(d2))
+        self.assertEqual(ca.parse_dn_components(d1), ca.parse_dn_components(d2))
 
 
 class TestSelfSignedRootCA(unittest.TestCase):
@@ -90,7 +91,7 @@ DDBEj7Z+9fcUD0nITBf5IKCaNI0Eu7IoWjzkCi1X2Hhju68HTHkg0Z75x6kx5uu/
 VlkMGsPXn/qIz2CFLLil84YL848MurxzTLmq4eBMWSdyjWJTXuk=
 -----END RSA PRIVATE KEY-----"""
         self.__class__.privatekey = OpenSSL.crypto.load_privatekey(FILETYPE_PEM, pk_text)
-        self.__class__.root_ca = create_self_signed_cert(self.privatekey, dn)
+        self.__class__.root_ca = ca.create_self_signed_root_cert(self.privatekey, dn)
         cert_obj = self.root_ca
         output = _read_certificate_text(cert_obj)
         self.assertRegex(output,
@@ -100,8 +101,9 @@ VlkMGsPXn/qIz2CFLLil84YL848MurxzTLmq4eBMWSdyjWJTXuk=
     def test_0002_issued_cert(self):
         pk1 = OpenSSL.crypto.PKey()
         pk1.generate_key(TYPE_RSA, 1024)
-        csr = create_cert_req(pk1, dict(CN='foobar', C='FI'))
-        crt = create_certificate_from_csr(csr, self.root_ca)
+        csr = ca.create_cert_req(pk1, dict(CN='foobar', C='FI'))
+        crt = ca.create_certificate_from_csr(csr, self.root_ca)
+        ca.add_default_extensions(crt, self.root_ca)
         crt.sign(self.privatekey, 'SHA256')
         output = _read_certificate_text(crt)
         self.assertRegex(output,
